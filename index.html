@@ -1,0 +1,320 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>АСУ ТП: Сборка стрелочного перевода</title>
+    <style>
+        :root { --blue: #005A9C; --dark: #0a2540; --bg: #f4f7f9; --green: #10b981; --red: #ef4444; --gray: #64748b; }
+        * { box-sizing: border-box; font-family: 'Roboto', Arial, sans-serif; }
+        body { margin: 0; background: var(--bg); color: #1c2b36; display: flex; flex-direction: column; min-height: 100vh; }
+        
+        /* Шапка */
+        header { background: var(--dark); color: white; padding: 15px 40px; display: flex; justify-content: space-between; align-items: center; }
+        .logo { width: 40px; height: 40px; background: white; color: var(--dark); font-weight: bold; display: flex; align-items: center; justify-content: center; font-size: 20px; border-radius: 4px; margin-right: 15px; }
+        .header-title h1 { margin: 0; font-size: 18px; }
+        .header-title p { margin: 2px 0 0 0; font-size: 11px; color: #94a3b8; text-transform: uppercase; }
+        .nav { display: flex; background: #1e293b; border-radius: 6px; padding: 4px; }
+        .nav button { background: transparent; border: none; color: #94a3b8; padding: 8px 16px; cursor: pointer; border-radius: 4px; font-weight: 500; }
+        .nav button.active { background: var(--blue); color: white; }
+        .status { background: rgba(255,255,255,0.1); padding: 6px 12px; border-radius: 20px; font-size: 12px; display: flex; align-items: center; gap: 8px; }
+        .dot { width: 8px; height: 8px; background: var(--green); border-radius: 50%; animation: pulse 2s infinite; }
+        @keyframes pulse { 0% { box-shadow: 0 0 0 0 rgba(16,185,129,0.7); } 70% { box-shadow: 0 0 0 6px rgba(16,185,129,0); } 100% { box-shadow: 0 0 0 0 rgba(16,185,129,0); } }
+
+        /* Общие стили */
+        .page { display: none; padding: 30px; max-width: 1200px; margin: 0 auto; width: 100%; flex-grow: 1; }
+        .page.active { display: block; }
+        .card { background: white; border-radius: 8px; border: 1px solid #e2e8f0; padding: 20px; }
+        .editable { border-bottom: 1px dashed var(--blue); outline: none; cursor: text; padding: 0 2px; }
+        .editable:hover { background: #e6f0f9; }
+        .editable:focus { background: white; border-bottom: 2px solid var(--blue); }
+
+        /* MES View */
+        .mes-layout { display: grid; grid-template-columns: 2fr 1fr; gap: 20px; }
+        .settings { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 10px; background: #f8fafc; padding: 15px; border-radius: 6px; margin-bottom: 20px; border: 1px solid #e2e8f0; }
+        .settings input { width: 100%; padding: 8px; border: 1px solid #cbd5e1; border-radius: 4px; font-weight: bold; }
+        .settings label { font-size: 11px; color: var(--gray); font-weight: bold; text-transform: uppercase; display: block; margin-bottom: 5px; }
+        
+        .step { border: 1px solid #e2e8f0; border-radius: 6px; padding: 15px; margin-bottom: 10px; display: flex; justify-content: space-between; align-items: center; background: #fafafa; opacity: 0.7; transition: 0.3s; }
+        .step.active { border-color: var(--blue); background: #e6f0f9; opacity: 1; box-shadow: 0 2px 8px rgba(0,90,156,0.1); }
+        .step.done { border-color: var(--green); background: #ecfdf5; opacity: 1; }
+        .step.err { border-color: var(--red); background: #fef2f2; animation: shake 0.4s; }
+        @keyframes shake { 0%,100%{transform:translateX(0)} 25%{transform:translateX(-5px)} 75%{transform:translateX(5px)} }
+        .step h3 { margin: 0 0 5px 0; font-size: 15px; color: var(--dark); }
+        .step p { margin: 0; font-size: 12px; color: var(--gray); }
+        .badge { font-size: 10px; padding: 3px 6px; border-radius: 4px; font-weight: bold; text-transform: uppercase; margin-top: 5px; display: inline-block; }
+        .b-wait { background: #e2e8f0; color: var(--gray); } .b-act { background: var(--blue); color: white; }
+        .b-done { background: var(--green); color: white; } .b-err { background: var(--red); color: white; } .b-load { background: #f59e0b; color: white; }
+
+        button.act { background: var(--blue); color: white; border: none; padding: 8px 16px; border-radius: 4px; cursor: pointer; font-weight: bold; min-width: 120px; }
+        button.act:disabled { background: #cbd5e1; cursor: not-allowed; }
+        .spinner { display: inline-block; width: 12px; height: 12px; border: 2px solid rgba(255,255,255,0.3); border-top-color: white; border-radius: 50%; animation: spin 1s linear infinite; margin-right: 5px; }
+        @keyframes spin { to { transform: rotate(360deg); } }
+
+        .telemetry { background: var(--dark); color: white; border-radius: 8px; padding: 20px; display: flex; flex-direction: column; }
+        .t-title { font-size: 12px; color: #94a3b8; text-transform: uppercase; margin-bottom: 15px; border-bottom: 1px solid #1e3a5f; padding-bottom: 10px; }
+        .t-val { font-family: monospace; font-size: 22px; color: #38bdf8; font-weight: bold; margin-bottom: 15px; }
+        .log { background: black; padding: 10px; border-radius: 4px; font-family: monospace; font-size: 11px; color: var(--green); height: 200px; overflow-y: auto; border: 1px solid #1e3a5f; }
+        .log div { margin-bottom: 5px; }
+
+        /* Dashboard View */
+        .kpi-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 15px; margin-bottom: 20px; }
+        .kpi { background: white; padding: 15px; border-radius: 8px; border: 1px solid #e2e8f0; }
+        .kpi h4 { margin: 0 0 10px 0; font-size: 13px; color: var(--gray); }
+        .kpi .val { font-size: 26px; font-weight: bold; color: var(--dark); margin-bottom: 5px; }
+        .kpi .trend { font-size: 12px; font-weight: bold; }
+        .up { color: var(--green); } .down { color: var(--red); }
+        
+        .dash-panels { display: grid; grid-template-columns: 2fr 1fr; gap: 20px; }
+        .chart { display: flex; align-items: flex-end; gap: 10px; height: 180px; border-bottom: 2px solid #e2e8f0; padding-bottom: 5px; margin-top: 20px; }
+        .bar-wrap { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: flex-end; height: 100%; }
+        .bar { width: 100%; background: var(--blue); border-radius: 4px 4px 0 0; transition: height 0.3s; }
+        .bar-l { font-size: 11px; color: var(--gray); margin-top: 5px; }
+        
+        .status-list { display: flex; flex-direction: column; gap: 10px; }
+        .status-item { background: #f8fafc; padding: 12px; border-radius: 6px; border: 1px solid #e2e8f0; display: flex; gap: 10px; align-items: center; }
+        .s-icon { width: 8px; height: 8px; border-radius: 50%; }
+        .s-ok { background: var(--green); } .s-warn { background: #f59e0b; }
+
+        /* Оверлей */
+        .overlay { position: fixed; top: 80px; right: 40px; background: rgba(16,185,129,0.95); color: white; padding: 15px 20px; border-radius: 8px; display: none; z-index: 1000; border-left: 5px solid #047857; box-shadow: 0 5px 15px rgba(0,0,0,0.2); }
+    </style>
+</head>
+<body>
+
+<header>
+    <div style="display:flex; align-items:center;">
+        <div class="logo">М</div>
+        <div class="header-title"><h1>АСУ ТП: Сборка стрелочного перевода</h1><p>Индустрия 4.0</p></div>
+    </div>
+    <div class="nav">
+        <button class="active" onclick="switchView('mes')" id="btnMES">Рабочее место</button>
+        <button onclick="switchView('dash')" id="btnDash">Дашборд</button>
+    </div>
+    <div style="display:flex; gap:15px; align-items:center;">
+        <div class="status"><div class="dot"></div>Online</div>
+        <button style="background:transparent; border:1px solid #475569; color:#94a3b8; padding:8px 12px; border-radius:4px; cursor:pointer;" onclick="resetAll()">↻ Сброс</button>
+    </div>
+</header>
+
+<div id="arNotify" class="overlay">
+    <strong>✅ AR: Подтверждено</strong><br><span style="font-size:12px;">Переходите к следующему шагу</span>
+</div>
+
+<!-- MES PAGE -->
+<div id="pageMES" class="page active">
+    <div class="mes-layout">
+        <div class="card">
+            <h2 style="margin-top:0; font-size:16px; color:var(--dark); margin-bottom:15px; border-bottom:2px solid #e6f0f9; padding-bottom:10px;">
+                Маршрут: Заказ № <span class="editable" contenteditable="true">СВ-2024-089</span>
+            </h2>
+            <div class="settings">
+                <div><label>Мин. момент (Нм)</label><input type="number" id="pMin" value="100" onchange="updParams()"></div>
+                <div><label>Макс. момент (Нм)</label><input type="number" id="pMax" value="110" onchange="updParams()"></div>
+                <div><label>Зазор (мм)</label><input type="number" id="pGap" value="0.5" step="0.1" onchange="updParams()"></div>
+            </div>
+            
+            <div class="step active" id="s1">
+                <div><h3>1. Верификация остряка</h3><p>Сверка с 3D-моделью</p><span class="badge b-act" id="b1">В работе</span></div>
+                <button class="act" id="btn1" onclick="doStep(1)">Сканировать</button>
+            </div>
+            <div class="step" id="s2">
+                <div><h3>2. Контроль момента</h3><p>Допуск: <span id="h2">100–110</span> Нм</p><span class="badge b-wait" id="b2">Ожидание</span></div>
+                <button class="act" id="btn2" disabled onclick="doStep(2)">Затянуть</button>
+            </div>
+            <div class="step" id="s3">
+                <div><h3>3. Проверка зазоров</h3><p>Норма: <span id="h3">0.5</span> мм</p><span class="badge b-wait" id="b3">Ожидание</span></div>
+                <button class="act" id="btn3" disabled onclick="doStep(3)">Измерить</button>
+            </div>
+        </div>
+
+        <div class="telemetry">
+            <div class="t-title">Телеметрия (MQTT)</div>
+            <div style="font-size:12px; color:#94a3b8;">Момент:</div>
+            <div class="t-val" id="tmVal">-- <span style="font-size:12px; color:var(--gray);">Нм</span></div>
+            <div style="font-size:12px; color:#94a3b8;">Зазор:</div>
+            <div class="t-val" id="tgVal">-- <span style="font-size:12px; color:var(--gray);">мм</span></div>
+            <div class="t-title" style="margin-top:10px;">Лог событий</div>
+            <div class="log" id="log"><div>[08:00] Init...</div></div>
+        </div>
+    </div>
+</div>
+
+<!-- DASHBOARD PAGE -->
+<div id="pageDash" class="page">
+    <div class="kpi-grid">
+        <div class="kpi">
+            <h4>Выполнение плана</h4>
+            <div class="val"><span class="editable" contenteditable="true" id="kPlan">92</span>%</div>
+            <div class="trend up" id="trPlan">▲ +2%</div>
+        </div>
+        <div class="kpi">
+            <h4>OEE</h4>
+            <div class="val"><span class="editable" contenteditable="true" id="kOee">85.4</span>%</div>
+            <div class="trend up" id="trOee">▲ Норма</div>
+        </div>
+        <div class="kpi">
+            <h4>Брак (PPM)</h4>
+            <div class="val"><span class="editable" contenteditable="true" id="kDef">12</span></div>
+            <div class="trend up" id="trDef">▼ -8</div>
+        </div>
+        <div class="kpi">
+            <h4>Заказы</h4>
+            <div class="val"><span class="editable" contenteditable="true">8</span></div>
+            <div class="trend" style="color:var(--gray);"><span class="editable" contenteditable="true">2</span> приоритет</div>
+        </div>
+    </div>
+
+    <div class="dash-panels">
+        <div class="card">
+            <h4 style="margin:0 0 10px 0; color:var(--dark);">Производство (шт.)</h4>
+            <div class="chart">
+                <div class="bar-wrap"><div class="editable" contenteditable="true" style="font-size:11px; font-weight:bold; margin-bottom:5px;">12</div><div class="bar" style="height:40%;"></div><div class="bar-l">Пн</div></div>
+                <div class="bar-wrap"><div class="editable" contenteditable="true" style="font-size:11px; font-weight:bold; margin-bottom:5px;">15</div><div class="bar" style="height:50%;"></div><div class="bar-l">Вт</div></div>
+                <div class="bar-wrap"><div class="editable" contenteditable="true" style="font-size:11px; font-weight:bold; margin-bottom:5px;">14</div><div class="bar" style="height:46%;"></div><div class="bar-l">Ср</div></div>
+                <div class="bar-wrap"><div class="editable" contenteditable="true" style="font-size:11px; font-weight:bold; margin-bottom:5px;">18</div><div class="bar" style="height:60%;"></div><div class="bar-l">Чт</div></div>
+                <div class="bar-wrap"><div class="editable" contenteditable="true" style="font-size:11px; font-weight:bold; margin-bottom:5px;">22</div><div class="bar" style="height:73%;"></div><div class="bar-l">Пт</div></div>
+                <div class="bar-wrap"><div class="editable" contenteditable="true" style="font-size:11px; font-weight:bold; margin-bottom:5px; color:var(--green);">24</div><div class="bar" style="height:80%; background:var(--green);"></div><div class="bar-l" style="color:var(--green); font-weight:bold;">Сб</div></div>
+            </div>
+        </div>
+        <div class="card">
+            <h4 style="margin:0 0 10px 0; color:var(--dark);">Статус оборудования</h4>
+            <div class="status-list">
+                <div class="status-item"><div class="s-icon s-ok"></div><div><strong>Стенд ВСМ-1</strong><br><span class="editable" contenteditable="true" style="font-size:12px; color:var(--gray);">Работает. 78%</span></div></div>
+                <div class="status-item"><div class="s-icon s-ok"></div><div><strong>Гайковерт</strong><br><span class="editable" contenteditable="true" style="font-size:12px; color:var(--gray);">Калибровка ОК</span></div></div>
+                <div class="status-item"><div class="s-icon s-warn"></div><div><strong>Дальномер</strong><br><span class="editable" contenteditable="true" style="font-size:12px; color:var(--gray);">ТО через 12 ч</span></div></div>
+                <div class="status-item"><div class="s-icon s-ok"></div><div><strong>Edge-контроллер</strong><br><span class="editable" contenteditable="true" style="font-size:12px; color:var(--gray);">Задержка 45 мс</span></div></div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+    // --- Переключение вкладок ---
+    function switchView(v) {
+        document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
+        document.querySelectorAll('.nav button').forEach(b => b.classList.remove('active'));
+        document.getElementById(v === 'mes' ? 'pageMES' : 'pageDash').classList.add('active');
+        document.getElementById(v === 'mes' ? 'btnMES' : 'btnDash').classList.add('active');
+    }
+
+    // --- MES Логика ---
+    let minV = 100, maxV = 110, gapV = 0.5;
+    let verified = false;
+
+    function updParams() {
+        minV = +document.getElementById('pMin').value || 0;
+        maxV = +document.getElementById('pMax').value || 0;
+        gapV = +document.getElementById('pGap').value || 0;
+        document.getElementById('h2').innerText = `${minV}–${maxV}`;
+        document.getElementById('h3').innerText = gapV;
+        log(`Параметры обновлены: [${minV}-${maxV}] Нм, ${gapV} мм`);
+    }
+
+    function log(msg) {
+        const l = document.getElementById('log');
+        const d = document.createElement('div');
+        d.innerText = `[${new Date().toTimeString().slice(0,5)}] ${msg}`;
+        l.appendChild(d);
+        l.scrollTop = l.scrollHeight;
+    }
+
+    function badge(id, txt, cls) {
+        const el = document.getElementById('b' + id);
+        el.innerText = txt; el.className = 'badge ' + cls;
+    }
+
+    function btnState(id, load, txt) {
+        const b = document.getElementById('btn' + id);
+        if (load) { b.innerHTML = `<div class="spinner"></div>...`; b.disabled = true; }
+        else b.innerHTML = txt;
+    }
+
+    function resetAll() {
+        verified = false;
+        document.querySelectorAll('.step').forEach(el => el.classList.remove('active', 'done', 'err'));
+        document.getElementById('s1').classList.add('active');
+        badge(1, 'В работе', 'b-act'); badge(2, 'Ожидание', 'b-wait'); badge(3, 'Ожидание', 'b-wait');
+        document.getElementById('btn1').disabled = false; btnState(1, false, 'Сканировать');
+        document.getElementById('btn2').disabled = true; btnState(2, false, 'Затянуть');
+        document.getElementById('btn3').disabled = true; btnState(3, false, 'Измерить');
+        document.getElementById('tmVal').innerHTML = '-- <span style="font-size:12px; color:var(--gray);">Нм</span>';
+        document.getElementById('tgVal').innerHTML = '-- <span style="font-size:12px; color:var(--gray);">мм</span>';
+        document.getElementById('log').innerHTML = '';
+        log('Сессия сброшена'); updParams();
+    }
+
+    function doStep(n) {
+        if (n === 1) {
+            btnState(1, true); badge(1, 'Сканирование', 'b-load'); log('Запуск машинного зрения...');
+            setTimeout(() => {
+                document.getElementById('s1').classList.replace('active', 'done'); badge(1, 'Выполнено', 'b-done');
+                document.getElementById('s2').classList.add('active'); badge(2, 'В работе', 'b-act');
+                document.getElementById('btn2').disabled = false; btnState(1, false, 'Сканировать'); document.getElementById('btn1').disabled = true;
+                verified = true; log('УСПЕХ: Деталь идентифицирована');
+            }, 800);
+        } else if (n === 2) {
+            if (!verified) return;
+            btnState(2, true); badge(2, 'Затяжка', 'b-load'); log('MQTT: Чтение данных...');
+            setTimeout(() => {
+                let t = maxV > 500 ? 500 : Math.round((minV + maxV) / 2);
+                document.getElementById('tmVal').innerHTML = `${t} <span style="font-size:12px; color:var(--gray);">Нм</span>`;
+                if (t >= minV && t <= maxV) {
+                    log(`Момент ${t} Нм. Норма.`);
+                    document.getElementById('s2').classList.replace('active', 'done'); badge(2, 'Выполнено', 'b-done');
+                    document.getElementById('s3').classList.add('active'); badge(3, 'В работе', 'b-act');
+                    document.getElementById('btn3').disabled = false; btnState(2, false, 'Затянуть'); document.getElementById('btn2').disabled = true;
+                    const ov = document.getElementById('arNotify'); ov.style.display = 'block'; setTimeout(() => ov.style.display = 'none', 3000);
+                } else {
+                    log(`ОШИБКА: ${t} Нм вне допуска!`);
+                    document.getElementById('s2').classList.add('err'); badge(2, 'Брак', 'b-err');
+                    setTimeout(() => document.getElementById('s2').classList.remove('err'), 500);
+                    btnState(2, false, 'Повторить'); document.getElementById('btn2').disabled = false;
+                }
+            }, 1000);
+        } else if (n === 3) {
+            btnState(3, true); badge(3, 'Измерение', 'b-load');
+            setTimeout(() => {
+                const g = gapV.toFixed(2);
+                document.getElementById('tgVal').innerHTML = `${g} <span style="font-size:12px; color:var(--gray);">мм</span>`;
+                log(`Зазор ${g} мм. Сборка завершена.`);
+                document.getElementById('s3').classList.replace('active', 'done'); badge(3, 'Выполнено', 'b-done');
+                btnState(3, false, 'Измерить'); document.getElementById('btn3').disabled = true;
+            }, 800);
+        }
+    }
+
+    // --- Автоматизация дашборда ---
+    document.getElementById('kPlan').addEventListener('input', function() {
+        const v = parseFloat(this.innerText) || 0;
+        const tr = document.getElementById('trPlan');
+        if (v >= 90) { tr.className = 'trend up'; tr.innerHTML = `▲ +${(v-90).toFixed(1)}%`; }
+        else { tr.className = 'trend down'; tr.innerHTML = `▼ -${(90-v).toFixed(1)}%`; }
+    });
+
+    document.getElementById('kOee').addEventListener('input', function() {
+        const v = parseFloat(this.innerText) || 0;
+        const tr = document.getElementById('trOee');
+        if (v >= 85) { tr.className = 'trend up'; tr.innerHTML = '▲ Норма'; }
+        else { tr.className = 'trend down'; tr.innerHTML = `▼ -${(85-v).toFixed(1)}%`; }
+    });
+
+    document.getElementById('kDef').addEventListener('input', function() {
+        const v = parseFloat(this.innerText) || 0;
+        const tr = document.getElementById('trDef');
+        if (v <= 20) { tr.className = 'trend up'; tr.innerHTML = `▼ -${(20-v)} PPM`; }
+        else { tr.className = 'trend down'; tr.innerHTML = `▲ +${(v-20)} PPM`; }
+    });
+
+    document.querySelectorAll('.bar-wrap .editable').forEach(el => {
+        el.addEventListener('input', function() {
+            const val = parseInt(this.innerText) || 0;
+            const bar = this.nextElementSibling;
+            bar.style.height = Math.min((val / 30) * 100, 100) + '%';
+        });
+    });
+
+    window.onload = () => { updParams(); };
+</script>
+</body>
+</html>
